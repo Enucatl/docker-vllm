@@ -1,3 +1,4 @@
 # Local secrets and environment
 .env
 secrets/
+.claude
