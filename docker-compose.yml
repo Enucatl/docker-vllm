@@ -3,6 +3,15 @@
 # Serves vLLM model containers (vision, text, embeddings) on fixed ports.
 # Any client that speaks the OpenAI API can use these endpoints.
 #
+# Profiles:
+#   default (extraction)  — OCR, embeddings, structured extraction
+#   coding                — Qwen 3.5 27B local LLM for code/text
+#
+# Usage:
+#   docker compose --profile extraction up -d     # Start extraction stack
+#   docker compose --profile coding up -d         # Start Qwen 3.5 (stop others first!)
+#   docker compose up -d                          # Start all (warning: VRAM conflict)
+#
 # Start:   docker compose up -d
 # Stop:    docker compose down
 #
@@ -14,14 +23,16 @@
 #   http://<this-host>:8100/v1  — OCR vision model       (Nanonets-OCR2-3B)
 #   http://<this-host>:8102/v1  — embeddings             (BAAI/bge-m3)
 #   http://<this-host>:8103/v1  — structured extraction  (NuExtract-2.0-4B)
+#   http://<this-host>:8107/v1  — large language model   (Qwen/Qwen3.5-9B)
 
 services:
 
-  # OCR vision model — Nanonets-OCR2-3B (Qwen2-VL based) on port 8100.
-  nanonets-ocr2-3b:
+  # OCR vision model
+  nanonets-ocr:
     image: vllm/vllm-openai:latest
-    restart: unless-stopped
+    restart: no
     ipc: host
+    profiles: ["extraction"]
     ports:
       - "8100:8000"
     volumes:
@@ -32,7 +43,7 @@ services:
     entrypoint: ["/bin/sh", "-c", "export HF_TOKEN=$(cat /run/secrets/hf_token) && exec python3 -m vllm.entrypoints.openai.api_server \"$@\"", "--"]
     command:
       - --model=nanonets/Nanonets-OCR2-3B
-      - --max-model-len=16128
+      - --max-model-len=20000
       - --trust-remote-code
       - --gpu-memory-utilization=0.38
     healthcheck:
@@ -42,13 +53,14 @@ services:
       retries: 3
       start_period: 120s
 
-  # Structured extraction — NuExtract-2.0-4B on port 8103.
-  nuextract-2-0-4b:
+  # Structured extraction
+  nuextract:
     image: vllm/vllm-openai:latest
-    restart: unless-stopped
+    restart: no
     ipc: host
+    profiles: ["extraction"]
     depends_on:
-      nanonets-ocr2-3b:
+      nanonets-ocr:
         condition: service_healthy
     ports:
       - "8103:8000"
@@ -63,6 +75,7 @@ services:
       - --max-model-len=8192
       - --override-generation-config={"temperature":0}
       - --gpu-memory-utilization=0.38
+      - --kv-cache-dtype=fp8
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -71,12 +84,13 @@ services:
       start_period: 120s
 
   # Embeddings — BAAI/bge-m3 on port 8102, multilingual.
-  bge-m3:
+  bge:
     image: vllm/vllm-openai:latest
-    restart: unless-stopped
+    restart: no
     ipc: host
+    profiles: ["extraction"]
     depends_on:
-      nuextract-2-0-4b:
+      nuextract:
         condition: service_healthy
     ports:
       - "8102:8000"
@@ -90,6 +104,33 @@ services:
       - --runner=pooling
       - --max-model-len=8192
       - --gpu-memory-utilization=0.05
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # Qwen 3.5 9B — Large language model on port 8107.
+  # Lightweight model suitable for RTX 5090 32GB VRAM.
+  vllm-qwen-35:
+    image: vllm/vllm-openai:latest
+    restart: no
+    ipc: host
+    profiles: ["coding"]
+    ports:
+      - "8107:8000"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+      - vllm-cache:/root/.cache/vllm
+    secrets:
+      - hf_token
+    entrypoint: ["/bin/sh", "-c", "export HF_TOKEN=$(cat /run/secrets/hf_token) && exec python3 -m vllm.entrypoints.openai.api_server \"$@\"", "--"]
+    command:
+      - --model=Qwen/Qwen3.5-9B
+      - --max-model-len=24576
+      - --gpu-memory-utilization=0.9
+      - --kv-cache-dtype=fp8
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
