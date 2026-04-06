@@ -4,8 +4,8 @@
 # Any client that speaks the OpenAI API can use these endpoints.
 #
 # Profiles:
-#   default (extraction)  — OCR, embeddings, structured extraction
-#   coding                — Qwen 3.5 27B local LLM for code/text
+#   extraction — OCR and embeddings (Nanonets-OCR + BGE-m3)
+#   coding     — Qwen 3.5-9B local LLM for code/text
 #
 # Usage:
 #   docker compose --profile extraction up -d     # Start extraction stack
@@ -22,8 +22,7 @@
 # Endpoints (OpenAI-compatible):
 #   http://<this-host>:8100/v1  — OCR vision model       (Nanonets-OCR2-3B)
 #   http://<this-host>:8102/v1  — embeddings             (BAAI/bge-m3)
-#   http://<this-host>:8103/v1  — structured extraction  (NuExtract-2.0-8B-GPTQ)
-#   http://<this-host>:8107/v1  — large language model   (Qwen/Qwen3.5-9B)
+#   http://<this-host>:8107/v1  — large language model   (Qwen/Qwen3.5-9B, coding profile)
 
 services:
 
@@ -32,7 +31,7 @@ services:
     image: vllm/vllm-openai:latest
     restart: no
     ipc: host
-    profiles: ["disabled"]
+    profiles: ["extraction"]
     ports:
       - "8100:8000"
     volumes:
@@ -89,7 +88,7 @@ services:
     ipc: host
     profiles: ["extraction"]
     depends_on:
-      qwen:
+      nanonets-ocr:
         condition: service_healthy
     ports:
       - "8102:8000"
@@ -116,7 +115,7 @@ services:
     image: vllm/vllm-openai:latest
     restart: no
     ipc: host
-    profiles: ["coding", "extraction"]
+    profiles: ["coding"]
     ports:
       - "8107:8000"
     volumes:
