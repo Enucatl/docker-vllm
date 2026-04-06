@@ -22,7 +22,7 @@
 # Endpoints (OpenAI-compatible):
 #   http://<this-host>:8100/v1  — OCR vision model       (Nanonets-OCR2-3B)
 #   http://<this-host>:8102/v1  — embeddings             (BAAI/bge-m3)
-#   http://<this-host>:8103/v1  — structured extraction  (NuExtract-2.0-4B)
+#   http://<this-host>:8103/v1  — structured extraction  (NuExtract-2.0-8B-GPTQ)
 #   http://<this-host>:8107/v1  — large language model   (Qwen/Qwen3.5-9B)
 
 services:
@@ -53,15 +53,12 @@ services:
       retries: 3
       start_period: 120s
 
-  # Structured extraction
+  # Structured extraction - 8B GPTQ quantized model
   nuextract:
     image: vllm/vllm-openai:latest
     restart: no
     ipc: host
-    profiles: ["extraction"]
-    depends_on:
-      nanonets-ocr:
-        condition: service_healthy
+    profiles: []
     ports:
       - "8103:8000"
     volumes:
@@ -71,11 +68,12 @@ services:
       - hf_token
     entrypoint: ["/bin/sh", "-c", "export HF_TOKEN=$(cat /run/secrets/hf_token) && exec python3 -m vllm.entrypoints.openai.api_server \"$@\"", "--"]
     command:
-      - --model=numind/NuExtract-2.0-4B
+      - --model=numind/NuExtract-2.0-8B-GPTQ
+      - --dtype=float16
       - --max-model-len=8192
-      - --override-generation-config={"temperature":0}
-      - --gpu-memory-utilization=0.38
-      - --kv-cache-dtype=fp8
+      - --gpu-memory-utilization=0.45
+      - --quantization=gptq_marlin
+      - --trust-remote-code
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -84,26 +82,27 @@ services:
       start_period: 120s
 
   # Embeddings — BAAI/bge-m3 on port 8102, multilingual.
+  # Served via vLLM.
   bge:
     image: vllm/vllm-openai:latest
     restart: no
     ipc: host
     profiles: ["extraction"]
     depends_on:
-      nuextract:
+      nanonets-ocr:
         condition: service_healthy
     ports:
       - "8102:8000"
     volumes:
       - hf-cache:/root/.cache/huggingface
+      - vllm-cache:/root/.cache/vllm
     secrets:
       - hf_token
     entrypoint: ["/bin/sh", "-c", "export HF_TOKEN=$(cat /run/secrets/hf_token) && exec python3 -m vllm.entrypoints.openai.api_server \"$@\"", "--"]
     command:
       - --model=BAAI/bge-m3
-      - --runner=pooling
-      - --max-model-len=8192
       - --gpu-memory-utilization=0.05
+      - --trust-remote-code
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -113,11 +112,14 @@ services:
 
   # Qwen 3.5 9B — Large language model on port 8107.
   # Lightweight model suitable for RTX 5090 32GB VRAM.
-  vllm-qwen-35:
+  qwen:
     image: vllm/vllm-openai:latest
     restart: no
     ipc: host
-    profiles: ["coding"]
+    profiles: ["coding", "extraction"]
+    depends_on:
+      nanonets-ocr:
+        condition: service_healthy
     ports:
       - "8107:8000"
     volumes:
@@ -128,9 +130,12 @@ services:
     entrypoint: ["/bin/sh", "-c", "export HF_TOKEN=$(cat /run/secrets/hf_token) && exec python3 -m vllm.entrypoints.openai.api_server \"$@\"", "--"]
     command:
       - --model=Qwen/Qwen3.5-9B
-      - --max-model-len=24576
-      - --gpu-memory-utilization=0.9
-      - --kv-cache-dtype=fp8
+      - --tensor-parallel-size=1
+      - --quantization=fp8
+      - --max-model-len=8192
+      - --gpu-memory-utilization=0.45
+      - --reasoning-parser=qwen3
+      - --trust-remote-code
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
