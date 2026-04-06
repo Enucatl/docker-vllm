@@ -32,7 +32,7 @@ services:
     image: vllm/vllm-openai:latest
     restart: no
     ipc: host
-    profiles: ["extraction"]
+    profiles: ["disabled"]
     ports:
       - "8100:8000"
     volumes:
@@ -58,7 +58,7 @@ services:
     image: vllm/vllm-openai:latest
     restart: no
     ipc: host
-    profiles: []
+    profiles: ["disabled"]
     ports:
       - "8103:8000"
     volumes:
@@ -89,7 +89,7 @@ services:
     ipc: host
     profiles: ["extraction"]
     depends_on:
-      nanonets-ocr:
+      qwen:
         condition: service_healthy
     ports:
       - "8102:8000"
@@ -117,9 +117,6 @@ services:
     restart: no
     ipc: host
     profiles: ["coding", "extraction"]
-    depends_on:
-      nanonets-ocr:
-        condition: service_healthy
     ports:
       - "8107:8000"
     volumes:
@@ -130,11 +127,10 @@ services:
     entrypoint: ["/bin/sh", "-c", "export HF_TOKEN=$(cat /run/secrets/hf_token) && exec python3 -m vllm.entrypoints.openai.api_server \"$@\"", "--"]
     command:
       - --model=Qwen/Qwen3.5-9B
-      - --tensor-parallel-size=1
-      - --quantization=fp8
-      - --max-model-len=8192
-      - --gpu-memory-utilization=0.45
+      - --max-model-len=60000
+      - --gpu-memory-utilization=0.85
       - --reasoning-parser=qwen3
+      - --enable-prefix-caching
       - --trust-remote-code
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
