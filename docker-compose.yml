@@ -51,7 +51,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s
+      # Initial model download/compilation can exceed two minutes.
+      start_period: 240s
 
   # Structured extraction - 8B GPTQ quantized model
   nuextract:
@@ -145,4 +146,4 @@ volumes:
 
 secrets:
   hf_token:
-    file: ./secrets/hf_token.txt
+    file: ../secrets/hf_token.txt
