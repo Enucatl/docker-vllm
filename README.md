@@ -2,6 +2,42 @@
 
 OpenAI-compatible model endpoints on the GPU workstation, served via [vLLM](https://github.com/vllm-project/vllm).
 
+## PaddleOCR-VL-1.6 document parsing
+
+The full parsing API is at `http://10.0.40.133:8108`; Paperless uses this base URL without `/v1`. Its endpoints are `http://10.0.40.133:8108/layout-parsing` and `http://10.0.40.133:8108/health`. Port 8108 binds all workstation interfaces. The Compose project is separate from the existing OpenAI endpoints and retains the Nanonets configuration and cache for rollback. Only one OCR model should occupy the GPU at a time; the Qwen coding profile also remains an alternate GPU allocation.
+
+```bash
+# Start (from /opt/docker/vllm)
+docker compose --profile extraction stop nanonets-ocr
+docker compose -f compose.paddle.yaml up -d --wait --wait-timeout 900
+
+# Health and complete-PDF smoke test, including a 41-page PDF
+curl -fsS http://10.0.40.133:8108/health
+uv sync --group dev
+uv run python scripts/verify_paddle.py --endpoint http://10.0.40.133:8108 --timeout 600
+
+# Shut down, retaining both pinned model directories and the vLLM cache
+docker compose -f compose.paddle.yaml down
+
+# Roll back to Nanonets OCR and embeddings
+docker compose -f compose.paddle.yaml down
+docker compose --profile extraction up -d nanonets-ocr bge
+```
+
+`uv run python scripts/verify_paddle.py --generate` regenerates the fixed PDFs in `examples/paddle/`. The smoke test sends each complete PDF as `file` with `fileType: 0`, layout detection enabled, all Markdown labels included, `returnMarkdownImages: false`, `visualize: false`, and `restructurePages: false`. It checks source and response page counts, first/middle/last page order, blank-page preservation, table/caption/equation and Unicode text, absence of image or export payloads, and invalid-PDF rejection. It prints elapsed time and peak GPU memory. The gateway accepts large base64 bodies; its upstream and PaddleX's recognition client allow 700 seconds. Paperless's initial timeout of 600 seconds needs no change for these samples. Set `INFERENCE_OCR_BACKEND=paddleocr`, `INFERENCE_OCR_ENDPOINT=http://10.0.40.133:8108`, `INFERENCE_PADDLE_TIMEOUT=600`, and `OCR_CONCURRENCY=1` in Paperless when its separate cutover is approved.
+
+Tested on RTX 5090 32 GB with driver 590.48.01 (CUDA 13.1). The pinned images in `compose.paddle.yaml` are PaddleOCR API `sha256:0971c409d1cab2b12aa17b76855e36ac8eb9fb1adc97dbeea15e9b09432a4a3b`, PaddleOCR vLLM `sha256:bffd525308facf5dba2f8eca44ab476704a0ae3bfdcba25f77655973e4c0a7ca`, and Nginx `sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94`. Installed versions: PaddleOCR 3.6.0, PaddleX 3.6.1, PaddlePaddle 3.2.1, vLLM 0.10.2, Nginx 1.30.5. Pinned model revisions in `model-cache/`: PaddleOCR-VL-1.6 `c5630abae1d940eafe0697512a0325494b02ab42`; PP-DocLayoutV3 `7b48a7566925fa464281f930c58eee04fe2c862a`.
+
+| Fixed sample | Pages | Elapsed | Peak GPU memory | Outcome |
+| --- | ---: | ---: | ---: | --- |
+| Multipage text and Unicode | 3 | 0.9 s | 23,887 MiB | ordered; accents, footer retained |
+| Table, caption, equation | 1 | 0.6 s | 24,789 MiB | HTML table, caption, equation retained |
+| Scanned text page | 1 | 0.6 s | 27,855 MiB | raster text recognized |
+| Blank middle page | 3 | 0.6 s | 24,789 MiB | empty result retained in order |
+| Long document | 41 | 2.6 s | 27,849 MiB | all pages returned; first, middle, last checked |
+
+The first table request took 42.2 seconds while the service warmed up; the first request after a pinned-image restart took 40.9 seconds. An invalid PDF returned HTTP 422. With recognition stopped, `/health` returned HTTP 500; after restart it returned 200. GPU memory remained at about 27,855 MiB after the long request, leaving about 4.6 GiB of the 32,607 MiB device memory. These measurements cover the Paddle stack alone; other GPU services were stopped during the run.
+
 ## Endpoints
 
 | Port | Model | Task | GPU memory |

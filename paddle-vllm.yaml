@@ -1,0 +1,3 @@
+gpu-memory-utilization: 0.7
+max-num-seqs: 4
+max-num-batched-tokens: 16384
