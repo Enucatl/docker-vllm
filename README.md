@@ -4,7 +4,9 @@ OpenAI-compatible model endpoints on the GPU workstation, served via [vLLM](http
 
 ## PaddleOCR-VL-1.6 document parsing
 
-The full parsing API is at `http://10.0.40.133:8108`; Paperless uses this base URL without `/v1`. Its endpoints are `http://10.0.40.133:8108/layout-parsing` and `http://10.0.40.133:8108/health`. Port 8108 binds all workstation interfaces. The Compose project is separate from the existing OpenAI endpoints and retains the Nanonets configuration and cache for rollback. Only one OCR model should occupy the GPU at a time; the Qwen coding profile also remains an alternate GPU allocation.
+The full parsing API is at `http://10.0.40.133:8108`; Paperless uses this base URL without `/v1`. Its endpoints are `http://10.0.40.133:8108/layout-parsing` and `http://10.0.40.133:8108/health`. Successful parsing responses include `result.provenance` with the configured pipeline, recognition model, and layout model. Port 8108 binds all workstation interfaces. The Compose project is separate from the existing OpenAI endpoints and retains the Nanonets configuration and cache for rollback. Only one OCR model should occupy the GPU at a time; the Qwen coding profile also remains an alternate GPU allocation.
+
+The gateway adds provenance to the pinned Paddle API's JSON response. If the pipeline or models change, update the names in `paddle-nginx.conf` and rerun the smoke test.
 
 ```bash
 # Start (from /opt/docker/vllm)

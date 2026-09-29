@@ -110,6 +110,11 @@ def check_pdf(endpoint: str, path: Path, timeout: int) -> None:
     body = response.json()
     assert body["errorCode"] == 0, body.get("errorMsg")
     result = body["result"]
+    assert result["provenance"] == {
+        "pipeline": "PaddleOCR-VL-1.6",
+        "model": "PaddleOCR-VL-1.6",
+        "layout_model": "PP-DocLayoutV3",
+    }
     assert result["dataInfo"]["numPages"] == page_count
     assert len(result["dataInfo"]["pages"]) == page_count
     pages = result["layoutParsingResults"]
