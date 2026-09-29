@@ -4,7 +4,7 @@
 # Any client that speaks the OpenAI API can use these endpoints.
 #
 # Profiles:
-#   extraction — OCR and embeddings (Nanonets-OCR + BGE-m3)
+#   extraction — PaddleOCR-VL parsing and BGE-m3 embeddings
 #   coding     — Qwen 3.5-9B local LLM for code/text
 #
 # Usage:
@@ -20,68 +20,13 @@
 #   setfacl -m u:100000:r secrets/hf_token.txt
 #
 # Endpoints (OpenAI-compatible):
-#   http://<this-host>:8100/v1  — OCR vision model       (Nanonets-OCR2-3B)
 #   http://<this-host>:8102/v1  — embeddings             (BAAI/bge-m3)
 #   http://<this-host>:8107/v1  — large language model   (Qwen/Qwen3.5-9B, coding profile)
 
+include:
+  - compose.paddle.yaml
+
 services:
-
-  # OCR vision model
-  nanonets-ocr:
-    # v0.19.0 is the newest vLLM release constrained to Transformers 4.x.
-    image: vllm/vllm-openai@sha256:d9a5c1c1614c959fde8d2a4d68449db184572528a6055afdd0caf1e66fb51504
-    restart: no
-    ipc: host
-    profiles: ["extraction"]
-    ports:
-      - "8100:8000"
-    volumes:
-      - hf-cache:/root/.cache/huggingface
-      - vllm-cache:/root/.cache/vllm
-    secrets:
-      - hf_token
-    entrypoint: ["/bin/sh", "-c", "export HF_TOKEN=$(cat /run/secrets/hf_token) && exec python3 -m vllm.entrypoints.openai.api_server \"$@\"", "--"]
-    command:
-      - --model=nanonets/Nanonets-OCR2-3B
-      - --max-model-len=20000
-      - --trust-remote-code
-      - --gpu-memory-utilization=0.38
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      # Initial model download/compilation can exceed two minutes.
-      start_period: 240s
-
-  # Structured extraction - 8B GPTQ quantized model
-  nuextract:
-    image: vllm/vllm-openai:latest
-    restart: no
-    ipc: host
-    profiles: ["disabled"]
-    ports:
-      - "8103:8000"
-    volumes:
-      - hf-cache:/root/.cache/huggingface
-      - vllm-cache:/root/.cache/vllm
-    secrets:
-      - hf_token
-    entrypoint: ["/bin/sh", "-c", "export HF_TOKEN=$(cat /run/secrets/hf_token) && exec python3 -m vllm.entrypoints.openai.api_server \"$@\"", "--"]
-    command:
-      - --model=numind/NuExtract-2.0-8B-GPTQ
-      - --dtype=float16
-      - --max-model-len=8192
-      - --gpu-memory-utilization=0.45
-      - --quantization=gptq_marlin
-      - --trust-remote-code
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-
   # Embeddings — BAAI/bge-m3 on port 8102, multilingual.
   # Served via vLLM.
   bge:
@@ -89,9 +34,6 @@ services:
     restart: no
     ipc: host
     profiles: ["extraction"]
-    depends_on:
-      nanonets-ocr:
-        condition: service_healthy
     ports:
       - "8102:8000"
     volumes:

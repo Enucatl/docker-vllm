@@ -4,26 +4,31 @@ OpenAI-compatible model endpoints on the GPU workstation, served via [vLLM](http
 
 ## PaddleOCR-VL-1.6 document parsing
 
-The full parsing API is at `http://10.0.40.133:8108`; Paperless uses this base URL without `/v1`. Its endpoints are `http://10.0.40.133:8108/layout-parsing` and `http://10.0.40.133:8108/health`. Successful parsing responses include `result.provenance` with the configured pipeline, recognition model's official Hugging Face ID, and layout model. Port 8108 binds all workstation interfaces. The Compose project is separate from the existing OpenAI endpoints and retains the Nanonets configuration and cache for rollback. Only one OCR model should occupy the GPU at a time; the Qwen coding profile also remains an alternate GPU allocation.
+The full parsing API is at `http://10.0.40.133:8108`; Paperless uses this base URL without `/v1`. Its endpoints are `/layout-parsing`, `/health`, and `/metadata`. Parsing responses pass through unchanged, without gateway-injected `result.provenance`. Port 8108 binds all workstation interfaces. PaddleOCR replaces the retired Nanonets OCR service in the `extraction` profile. The Qwen coding profile remains an alternate GPU allocation.
 
-The gateway adds provenance to the pinned Paddle API's JSON response. If the pipeline or models change, update the names in `paddle-nginx.conf` and rerun the smoke test.
+`GET /metadata` returns HTTP 200 with `Content-Type: application/json`, `Cache-Control: no-store`, and this flat JSON object:
+
+```json
+{"pipeline":"PaddleOCR-VL-1.6","model":"PaddlePaddle/PaddleOCR-VL-1.6","layout_model":"PP-DocLayoutV3"}
+```
+
+Paperless AI should fetch and validate these nonempty string fields at the start of each processing batch (or standalone document job), then persist that snapshot as provenance alongside each document's results. Metadata fetch or validation failure should fail the job before document writes; do not reuse stale metadata or invent defaults. This describes the configured deployment, not per-request attestation. Stop processing during backend upgrades so one batch cannot span deployments. `/metadata` is static and does not indicate readiness; use `/health` for that. If the pipeline or models change, update the names in `paddle-nginx.conf` and rerun the smoke test.
 
 ```bash
-# Start (from /opt/docker/vllm)
-docker compose --profile extraction stop nanonets-ocr
-docker compose -f compose.paddle.yaml up -d --wait --wait-timeout 900
+# One time: stop PaddleOCR under its former standalone Compose project
+docker compose -f compose.paddle.yaml down
+
+# Start PaddleOCR and BGE embeddings under the extraction profile
+docker compose --profile extraction up -d --wait --wait-timeout 900
 
 # Health and complete-PDF smoke test, including a 41-page PDF
 curl -fsS http://10.0.40.133:8108/health
+curl -fsS http://10.0.40.133:8108/metadata
 uv sync --group dev
 uv run python scripts/verify_paddle.py --endpoint http://10.0.40.133:8108 --timeout 600
 
-# Shut down, retaining both pinned model directories and the vLLM cache
-docker compose -f compose.paddle.yaml down
-
-# Roll back to Nanonets OCR and embeddings
-docker compose -f compose.paddle.yaml down
-docker compose --profile extraction up -d nanonets-ocr bge
+# Stop extraction services before allocating the GPU to the coding profile
+docker compose --profile extraction down
 ```
 
 `uv run python scripts/verify_paddle.py --generate` regenerates the fixed PDFs in `examples/paddle/`. The smoke test sends each complete PDF as `file` with `fileType: 0`, layout detection enabled, all Markdown labels included, `returnMarkdownImages: false`, `visualize: false`, and `restructurePages: false`. It checks source and response page counts, first/middle/last page order, blank-page preservation, table/caption/equation and Unicode text, absence of image or export payloads, and invalid-PDF rejection. It prints elapsed time and peak GPU memory. The gateway accepts large base64 bodies; its upstream and PaddleX's recognition client allow 700 seconds. Paperless's initial timeout of 600 seconds needs no change for these samples. Set `INFERENCE_OCR_BACKEND=paddleocr`, `INFERENCE_OCR_ENDPOINT=http://10.0.40.133:8108`, `INFERENCE_PADDLE_TIMEOUT=600`, and `OCR_CONCURRENCY=1` in Paperless when its separate cutover is approved.
@@ -44,11 +49,10 @@ The first table request took 42.2 seconds while the service warmed up; the first
 
 | Port | Model | Task | GPU memory |
 |------|-------|------|-----------|
-| 8100 | `nanonets/Nanonets-OCR2-3B` | OCR (vision) | 38% |
+| 8108 | PaddleOCR-VL-1.6 | OCR document parsing | about 86% |
 | 8102 | `BAAI/bge-m3` | Embeddings (multilingual) | 5% |
-| 8103 | `numind/NuExtract-2.0-4B` | Structured extraction | 30% |
+| 8107 | `Qwen/Qwen3.5-9B` | Coding LLM (coding profile) | 85% |
 
-Models start sequentially (each waits for the previous to be healthy) to avoid OOM during warm-up.
 
 `ipc: host` is set on all containers for shared-memory performance.
 
@@ -74,31 +78,6 @@ docker compose down
 
 ## Example queries
 
-### OCR — Nanonets-OCR2-3B (port 8100)
-
-The vision model needs a base64-encoded image (external URLs get blocked by most hosts).
-A test image is included at `examples/test-ocr.png`.
-
-```bash
-IMG_B64=$(base64 -w0 < examples/test-ocr.png)
-
-curl -s http://complex.home.arpa:8100/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"model\": \"nanonets/Nanonets-OCR2-3B\",
-    \"messages\": [
-      {
-        \"role\": \"user\",
-        \"content\": [
-          {\"type\": \"image_url\", \"image_url\": {\"url\": \"data:image/png;base64,\${IMG_B64}\"}},
-          {\"type\": \"text\", \"text\": \"Extract all text from this image.\"}
-        ]
-      }
-    ],
-    \"max_tokens\": 1024
-  }" | jq .choices[0].message.content
-```
-
 ### Embeddings — bge-m3 (port 8102)
 
 ```bash
@@ -108,26 +87,6 @@ curl -s http://complex.home.arpa:8102/v1/embeddings \
     "model": "BAAI/bge-m3",
     "input": "Hello, world!"
   }' | jq '{model: .model, dimensions: (.data[0].embedding | length)}'
-```
-
-### Structured extraction — NuExtract-2.0-4B (port 8103)
-
-Template values specify the expected type (`string`, `date-time`, `["string"]` for arrays, etc).
-The chat template wraps the schema and document as `# Template:` / `# Context:` sections.
-
-```bash
-curl -s http://complex.home.arpa:8103/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "numind/NuExtract-2.0-4B",
-    "messages": [
-      {
-        "role": "user",
-        "content": "# Template:\n{\"name\": \"string\", \"company\": \"string\", \"role\": \"string\", \"location\": \"string\"}\n# Context:\nJohn Smith works at Acme Corp as a software engineer in New York."
-      }
-    ],
-    "max_tokens": 256
-  }' | jq .choices[0].message.content
 ```
 
 Models are downloaded on first start and cached in the `hf-cache` volume.

@@ -29,11 +29,10 @@ images and CUDA compatibility instead of copying a generic GPU installation.
 The recognition server alone is only one stage; Paperless needs the full PDF
 parsing API that renders pages, detects layout and produces Markdown/JSON.
 
-Retain the existing Nanonets deployment configuration and model cache for
-rollback. Stop it if necessary to free GPU memory; simultaneous GPU residency
-is unnecessary. Keep metadata/chat endpoints operational according to this
-repository's existing allocation conventions. Keep GPU dependencies out of
-the Paperless AI image.
+Run the Paddle stack as the workstation OCR service. Stop other GPU model
+services before starting it; simultaneous GPU residency is unnecessary. Keep
+metadata/chat endpoints operational according to this repository's existing
+allocation conventions. Keep GPU dependencies out of the Paperless AI image.
 
 ## Exact Paperless client contract
 

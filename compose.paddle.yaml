@@ -2,6 +2,7 @@ name: paddleocr-vl
 
 services:
   paddleocr-vlm-server:
+    profiles: ["extraction"]
     image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server@sha256:bffd525308facf5dba2f8eca44ab476704a0ae3bfdcba25f77655973e4c0a7ca
     restart: unless-stopped
     user: root
@@ -26,6 +27,7 @@ services:
       start_period: 300s
 
   paddleocr-vl-api:
+    profiles: ["extraction"]
     image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-vl@sha256:0971c409d1cab2b12aa17b76855e36ac8eb9fb1adc97dbeea15e9b09432a4a3b
     restart: unless-stopped
     user: root
@@ -52,6 +54,7 @@ services:
       start_period: 300s
 
   paddleocr-gateway:
+    profiles: ["extraction"]
     image: nginx@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
     restart: unless-stopped
     ports:

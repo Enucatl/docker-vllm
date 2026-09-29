@@ -110,11 +110,7 @@ def check_pdf(endpoint: str, path: Path, timeout: int) -> None:
     body = response.json()
     assert body["errorCode"] == 0, body.get("errorMsg")
     result = body["result"]
-    assert result["provenance"] == {
-        "pipeline": "PaddleOCR-VL-1.6",
-        "model": "PaddlePaddle/PaddleOCR-VL-1.6",
-        "layout_model": "PP-DocLayoutV3",
-    }
+    assert "provenance" not in result
     assert result["dataInfo"]["numPages"] == page_count
     assert len(result["dataInfo"]["pages"]) == page_count
     pages = result["layoutParsingResults"]
@@ -164,6 +160,16 @@ def main() -> None:
         return
     health = requests.get(args.endpoint + "/health", timeout=10)
     health.raise_for_status()
+    metadata = requests.get(args.endpoint + "/metadata", timeout=10)
+    metadata.raise_for_status()
+    assert metadata.headers["Content-Type"].split(";")[0] == "application/json"
+    assert metadata.headers["Cache-Control"] == "no-store"
+    assert metadata.json() == {
+        "pipeline": "PaddleOCR-VL-1.6",
+        "model": "PaddlePaddle/PaddleOCR-VL-1.6",
+        "layout_model": "PP-DocLayoutV3",
+    }
+    print("metadata: deployment provenance, OK")
     paths = args.pdfs or [
         args.samples / name
         for name in (
