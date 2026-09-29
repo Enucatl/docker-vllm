@@ -1,9 +1,9 @@
 pipeline_name: PaddleOCR-VL-1.6
 batch_size: 64
 use_queues: true
-use_doc_preprocessor: false
+use_doc_preprocessor: true
 use_layout_detection: true
-use_chart_recognition: false
+use_chart_recognition: true
 use_seal_recognition: false
 format_block_content: false
 merge_layout_blocks: true
