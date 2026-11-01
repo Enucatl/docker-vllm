@@ -6,7 +6,8 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 import pytest
-from paddle_archive import patch_serving
+
+from vllm_extraction.paddle_archive import patch_serving
 
 
 @pytest.fixture

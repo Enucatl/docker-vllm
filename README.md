@@ -2,7 +2,9 @@
 
 OpenAI-compatible model endpoints on the GPU workstation, served via [vLLM](https://github.com/vllm-project/vllm).
 
-All five services and their pinned images are defined in `docker-compose.yml`. The `extraction` profile runs PaddleOCR and BGE embeddings; the `coding` profile runs Qwen. Paddle's processing stages remain configured in `paddle-pipeline.yaml`, its recognition server in `paddle-vllm.yaml`, and its gateway in `paddle-nginx.conf`.
+All five services and their pinned images are defined in `docker-compose.yml`. The `extraction` profile runs PaddleOCR and BGE embeddings; the `coding` profile runs Qwen. Paddle's processing stages remain configured in `src/vllm_extraction/config/paddle-pipeline.yaml`, its recognition server in `src/vllm_extraction/config/paddle-vllm.yaml`, and its gateway in `src/vllm_extraction/config/paddle-nginx.conf`.
+
+Python helpers live in `src/vllm_extraction/`, service configuration in its `config/` directory, and unit tests in `tests/`. Run Python commands from the repository root.
 
 ## PaddleOCR-VL-1.6 document parsing
 
@@ -16,7 +18,7 @@ Requests may set `includeArchiveImages: true` to include `archiveImage` on each 
 {"pipeline":"PaddleOCR-VL-1.6","model":"PaddlePaddle/PaddleOCR-VL-1.6","layout_model":"PP-DocLayoutV3"}
 ```
 
-Paperless AI should fetch and validate these nonempty string fields at the start of each processing batch (or standalone document job), then persist that snapshot as provenance alongside each document's results. Metadata fetch or validation failure should fail the job before document writes; do not reuse stale metadata or invent defaults. This describes the configured deployment, not per-request attestation. Stop processing during backend upgrades so one batch cannot span deployments. `/metadata` is static and does not indicate readiness; use `/health` for that. If the pipeline or models change, update the names in `paddle-nginx.conf` and rerun the smoke test.
+Paperless AI should fetch and validate these nonempty string fields at the start of each processing batch (or standalone document job), then persist that snapshot as provenance alongside each document's results. Metadata fetch or validation failure should fail the job before document writes; do not reuse stale metadata or invent defaults. This describes the configured deployment, not per-request attestation. Stop processing during backend upgrades so one batch cannot span deployments. `/metadata` is static and does not indicate readiness; use `/health` for that. If the pipeline or models change, update the names in `src/vllm_extraction/config/paddle-nginx.conf` and rerun the smoke test.
 
 ```bash
 # Start PaddleOCR and BGE embeddings under the extraction profile
@@ -26,13 +28,13 @@ docker compose --profile extraction up -d --wait --wait-timeout 900
 curl -fsS http://10.0.40.133:8108/health
 curl -fsS http://10.0.40.133:8108/metadata
 uv sync --group dev
-uv run python scripts/verify_paddle.py --endpoint http://10.0.40.133:8108 --timeout 600
+uv run python -m vllm_extraction.verify_paddle --endpoint http://10.0.40.133:8108 --timeout 600
 
 # Stop extraction services before allocating the GPU to the coding profile
 docker compose --profile extraction down
 ```
 
-`uv run python scripts/verify_paddle.py --generate` regenerates the fixed PDFs in `examples/paddle/`. The smoke test sends each complete PDF as `file` with `fileType: 0`, layout detection enabled, all Markdown labels included, `returnMarkdownImages: false`, `visualize: false`, and `restructurePages: false`. It checks source and response page counts, first/middle/last page order, blank-page preservation, table/caption/equation and Unicode text, absence of image or export payloads, and invalid-PDF rejection. It prints elapsed time and peak GPU memory. The gateway accepts large base64 bodies; its upstream and PaddleX's recognition client allow 700 seconds. Paperless's initial timeout of 600 seconds needs no change for these samples. Set `INFERENCE_OCR_BACKEND=paddleocr`, `INFERENCE_OCR_ENDPOINT=http://10.0.40.133:8108`, `INFERENCE_PADDLE_TIMEOUT=600`, and `OCR_CONCURRENCY=1` in Paperless when its separate cutover is approved.
+`uv run python -m vllm_extraction.verify_paddle --generate` regenerates the fixed PDFs in `examples/paddle/`. The smoke test sends each complete PDF as `file` with `fileType: 0`, layout detection enabled, all Markdown labels included, `returnMarkdownImages: false`, `visualize: false`, and `restructurePages: false`. It checks source and response page counts, first/middle/last page order, blank-page preservation, table/caption/equation and Unicode text, absence of image or export payloads, and invalid-PDF rejection. It prints elapsed time and peak GPU memory. The gateway accepts large base64 bodies; its upstream and PaddleX's recognition client allow 700 seconds. Paperless's initial timeout of 600 seconds needs no change for these samples. Set `INFERENCE_OCR_BACKEND=paddleocr`, `INFERENCE_OCR_ENDPOINT=http://10.0.40.133:8108`, `INFERENCE_PADDLE_TIMEOUT=600`, and `OCR_CONCURRENCY=1` in Paperless when its separate cutover is approved.
 
 Tested on RTX 5090 32 GB with driver 590.48.01 (CUDA 13.1). The pinned images in `docker-compose.yml` are PaddleOCR API `sha256:0971c409d1cab2b12aa17b76855e36ac8eb9fb1adc97dbeea15e9b09432a4a3b`, PaddleOCR vLLM `sha256:bffd525308facf5dba2f8eca44ab476704a0ae3bfdcba25f77655973e4c0a7ca`, and Nginx `sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94`. Installed versions: PaddleOCR 3.6.0, PaddleX 3.6.1, PaddlePaddle 3.2.1, vLLM 0.10.2, Nginx 1.30.5. Pinned model revisions in `model-cache/`: PaddleOCR-VL-1.6 `c5630abae1d940eafe0697512a0325494b02ab42`; PP-DocLayoutV3 `7b48a7566925fa464281f930c58eee04fe2c862a`.
 

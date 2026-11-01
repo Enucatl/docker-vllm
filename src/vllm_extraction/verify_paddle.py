@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate fixed PDF probes and verify Paddle's complete-PDF API."""
 
 import argparse
