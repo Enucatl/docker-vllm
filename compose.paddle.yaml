@@ -35,7 +35,8 @@ services:
     volumes:
       - ./model-cache/PP-DocLayoutV3:/models/PP-DocLayoutV3:ro
       - ./paddle-pipeline.yaml:/home/paddleocr/pipeline_config_vllm.yaml:ro
-    command: paddlex --serve --pipeline /home/paddleocr/pipeline_config_vllm.yaml
+      - ./scripts/paddle_archive.py:/opt/paddle_archive.py:ro
+    command: bash -ec 'python /opt/paddle_archive.py && exec paddlex --serve --pipeline /home/paddleocr/pipeline_config_vllm.yaml'
     depends_on:
       paddleocr-vlm-server:
         condition: service_healthy

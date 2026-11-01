@@ -4,7 +4,9 @@ OpenAI-compatible model endpoints on the GPU workstation, served via [vLLM](http
 
 ## PaddleOCR-VL-1.6 document parsing
 
-The full parsing API is at `http://10.0.40.133:8108`; Paperless uses this base URL without `/v1`. Its endpoints are `/layout-parsing`, `/health`, and `/metadata`. Parsing responses pass through unchanged, without gateway-injected `result.provenance`. Port 8108 binds all workstation interfaces. PaddleOCR replaces the retired Nanonets OCR service in the `extraction` profile. The Qwen coding profile remains an alternate GPU allocation.
+The full parsing API is at `http://cerebrum.home.arpa:8108`; Paperless uses this base URL without `/v1`. Its endpoints are `/layout-parsing`, `/health`, and `/metadata`. Parsing responses pass through unchanged, without gateway-injected `result.provenance`. Port 8108 binds all workstation interfaces. PaddleOCR replaces the retired Nanonets OCR service in the `extraction` profile. The Qwen coding profile remains an alternate GPU allocation.
+
+Requests may set `includeArchiveImages: true` to include `archiveImage` on each page: a base64 PNG of the actual orientation-corrected, unwarped preprocessor output. This is the clean page used for recognition, without visualization panels or annotations. The field is absent by default. The API startup script applies this extension to the pinned PaddleX image and fails if upstream code no longer matches.
 
 `GET /metadata` returns HTTP 200 with `Content-Type: application/json`, `Cache-Control: no-store`, and this flat JSON object:
 
