@@ -10,7 +10,9 @@ Python helpers live in `src/vllm_extraction/`, service configuration in its `con
 
 The full parsing API is at `http://cerebrum.home.arpa:8108`; Paperless uses this base URL without `/v1`. Its endpoints are `/layout-parsing`, `/health`, and `/metadata`. Parsing responses pass through unchanged, without gateway-injected `result.provenance`. Port 8108 binds all workstation interfaces. PaddleOCR replaces the retired Nanonets OCR service in the `extraction` profile. The Qwen coding profile remains an alternate GPU allocation.
 
-Requests may set `includeArchiveImages: true` to include `archiveImage` on each page: a base64 PNG of the actual orientation-corrected, unwarped preprocessor output. This is the clean page used for recognition, without visualization panels or annotations. The field is absent by default. The API startup script applies this extension to the pinned PaddleX image and fails if upstream code no longer matches.
+Document unwarping is disabled by default to preserve already-flat pages. To process curved photographs with unwarping, first enable `use_doc_unwarping` in `src/vllm_extraction/config/paddle-pipeline.yaml` and restart the Paddle API so its correction model is loaded; requests can then select it with `useDocUnwarping: true`. Orientation correction remains enabled.
+
+Requests may set `includeArchiveImages: true` to include `archiveImage` on each page: a base64 PNG of the actual preprocessor output, including orientation correction and unwarping when explicitly enabled. This is the clean page used for recognition, without visualization panels or annotations. The field is absent by default. The API startup script applies this extension to the pinned PaddleX image and fails if upstream code no longer matches.
 
 `GET /metadata` returns HTTP 200 with `Content-Type: application/json`, `Cache-Control: no-store`, and this flat JSON object:
 

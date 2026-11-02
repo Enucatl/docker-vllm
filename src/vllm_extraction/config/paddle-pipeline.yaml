@@ -61,7 +61,7 @@ SubPipelines:
     pipeline_name: doc_preprocessor
     batch_size: 4
     use_doc_orientation_classify: true
-    use_doc_unwarping: true
+    use_doc_unwarping: false
     SubModules:
       DocOrientationClassify:
         module_name: doc_text_orientation
