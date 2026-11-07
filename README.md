@@ -6,6 +6,15 @@ All five services and their pinned images are defined in `docker-compose.yml`. T
 
 Python helpers live in `src/vllm_extraction/`, service configuration in its `config/` directory, and unit tests in `tests/`. Run Python commands from the repository root.
 
+## Weekly Paperless processing
+
+Extraction and the separate [Paperless worker](paperless-workstation/README.md)
+run through Proxmox's weekly `vllm-weekly-window.timer`, Tuesdays at 01:05 UTC.
+All extraction/worker restart policies are disabled, so booting Cerebrum alone
+does not start them. The weekly workflow waits for model health, runs serial
+one-shot worker passes, lets the active pass finish, and stops only services it
+started. The manual commands below are for explicit maintenance.
+
 ## PaddleOCR-VL-1.6 document parsing
 
 The full parsing API is at `http://cerebrum.home.arpa:8108`; Paperless uses this base URL without `/v1`. Its endpoints are `/layout-parsing`, `/health`, and `/metadata`. Parsing responses pass through unchanged, without gateway-injected `result.provenance`. Port 8108 binds all workstation interfaces. PaddleOCR replaces the retired Nanonets OCR service in the `extraction` profile. The Qwen coding profile remains an alternate GPU allocation.
